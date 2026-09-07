@@ -4,16 +4,18 @@ import { FifoLogger } from 'fifo-logger'
 import {
   buildWebSource,
   core,
+  loadFileCollection,
   parsingOptions,
   processSpectra,
 } from './parse/prase-spectra'
 
-// Default tolerances
+// Default tolerances confirmed by vcnainala on issue #66
 const DEFAULT_TOLERANCE_H = 0.02
 const DEFAULT_TOLERANCE_C = 0.25
 
 export interface CorrelationInput {
-  url: string
+  url?: string
+  dir?: string
   mf: string
   toleranceH?: number
   toleranceC?: number
@@ -24,15 +26,22 @@ function resolveTolerance(value: number | undefined, fallback: number): number {
 }
 
 export async function generateCorrelationData(input: CorrelationInput) {
-  const { url, mf, toleranceH, toleranceC } = input
+  const { url, dir, mf, toleranceH, toleranceC } = input
   const logger = new FifoLogger()
 
-  const source = buildWebSource(url)
-
-  const { state } = await core.readFromWebSource(source, {
-    ...parsingOptions,
-    logger,
-  })
+  const { state } = url
+    ? await core.readFromWebSource(buildWebSource(url), {
+        ...parsingOptions,
+        logger,
+      })
+    : dir
+      ? await core.read(await loadFileCollection(dir), {
+          ...parsingOptions,
+          logger,
+        })
+      : (() => {
+          throw new Error('Either a spectra URL or a local directory path is required')
+        })()
 
   const spectraBeforeProcessing = state.data ? [...state.data.spectra] : []
 
@@ -49,10 +58,15 @@ export async function generateCorrelationData(input: CorrelationInput) {
   // object in place (see its catch block) instead of removing it. Compare
   // by reference against the pre-processing snapshot to filter those out,
   // so buildCorrelationData never sees a spectrum it can't actually read.
+  // Correlation also requires FT (frequency-domain) spectra specifically —
+  // a spectrum can successfully parse but still fail the FT-processing step
+  // (that failure is only logged, not removed from the array), so filter on
+  // info.isFt too, not just whether parsing itself succeeded.
   // Note: a pre-existing bug (see https://github.com/NFDI4Chem/nmrkit/issues/139)
   // currently makes every spectrum fail this step, so real cross-spectrum correlation links are untested here.
   const spectra = (state.data?.spectra ?? []).filter(
-    (spectrum, index) => spectrum !== spectraBeforeProcessing[index]
+    (spectrum, index) =>
+      spectrum !== spectraBeforeProcessing[index] && spectrum?.info?.isFt === true
   )
 
   const options: CorrelationOptions = {

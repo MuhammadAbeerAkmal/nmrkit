@@ -219,15 +219,19 @@ async function loadSpectrumFromURL(options: RequiredKey<FileOptionsArgs, 'u'>, l
 
 }
 
-async function loadSpectrumFromFilePath(options: RequiredKey<FileOptionsArgs, 'dir'>, logger: FifoLogger) {
-  const { dir: path, include, exclude } = options;
-
+function loadFileCollection(path: string, include?: string[], exclude?: string[]) {
   const dirPath = isAbsolute(path) ? path : join(process.cwd(), path)
 
-  const fileCollection = await FileCollection.fromPath(dirPath, {
+  return FileCollection.fromPath(dirPath, {
     unzip: { zipExtensions: ['zip', 'nmredata'] },
     filter: { include, exclude },
   })
+}
+
+async function loadSpectrumFromFilePath(options: RequiredKey<FileOptionsArgs, 'dir'>, logger: FifoLogger) {
+  const { dir: path, include, exclude } = options;
+
+  const fileCollection = await loadFileCollection(path, include, exclude)
 
   const {
     state
@@ -260,4 +264,4 @@ function parseSpectra(argv: yargs.ArgumentsCamelCase<FileOptionsArgs>
 
 
 
-export { loadSpectrumFromFilePath, loadSpectrumFromURL, parseSpectra, processSpectra, parsingOptions, core, buildWebSource }
+export { loadSpectrumFromFilePath, loadSpectrumFromURL, parseSpectra, processSpectra, parsingOptions, core, buildWebSource, loadFileCollection }

@@ -22,9 +22,10 @@ Commands:
 
 Options for 'correlation' command:
   -u, --url                Spectra ZIP file URL
+  -dir, --dir-path         Local directory path
       --mf                Molecular formula
-      --tolerance-h       H tolerance override (default: 0.02)
-      --tolerance-c       C tolerance override (default: 0.25)
+      --tolerance-h, --th  H tolerance override (default: 0.02)
+      --tolerance-c, --tc  C tolerance override (default: 0.25)
 
 Options for 'parse-spectra' command:
   -u, --url                File URL  
@@ -261,36 +262,48 @@ const peaksToNMRiumCommand: CommandModule = {
 // Define the correlation command
 const correlationCommand: CommandModule = {
   command: ['correlation', 'corr'],
-  describe: 'Build correlation data from NMR spectra fetched from a URL',
+  describe: 'Build correlation data from NMR spectra fetched from a URL or a local directory',
   builder: yargs => {
-    return yargs.options({
-      u: {
-        alias: 'url',
-        describe: 'Spectra ZIP file URL',
-        type: 'string',
-        demandOption: true,
-        nargs: 1,
-      },
-      mf: {
-        describe: 'Molecular formula',
-        type: 'string',
-        demandOption: true,
-        nargs: 1,
-      },
-      'tolerance-h': {
-        describe: 'H tolerance override (default: 0.02)',
-        type: 'number',
-      },
-      'tolerance-c': {
-        describe: 'C tolerance override (default: 0.25)',
-        type: 'number',
-      },
-    })
+    return yargs
+      .options({
+        u: {
+          alias: 'url',
+          describe: 'Spectra ZIP file URL',
+          type: 'string',
+          nargs: 1,
+        },
+        dir: {
+          alias: 'dir-path',
+          describe: 'Local directory path',
+          type: 'string',
+          nargs: 1,
+        },
+        mf: {
+          describe: 'Molecular formula',
+          type: 'string',
+          demandOption: true,
+          nargs: 1,
+        },
+        'tolerance-h': {
+          alias: 'th',
+          describe: 'H tolerance override',
+          type: 'number',
+          default: 0.02,
+        },
+        'tolerance-c': {
+          alias: 'tc',
+          describe: 'C tolerance override',
+          type: 'number',
+          default: 0.25,
+        },
+      })
+      .conflicts('u', 'dir')
   },
   handler: async argv => {
     try {
       const result = await generateCorrelationData({
-        url: argv.u as string,
+        url: argv.u as string | undefined,
+        dir: argv.dir as string | undefined,
         mf: argv.mf as string,
         toleranceH: argv['tolerance-h'] as number | undefined,
         toleranceC: argv['tolerance-c'] as number | undefined,
