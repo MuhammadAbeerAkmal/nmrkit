@@ -8,6 +8,7 @@ import {
   parsingOptions,
   processSpectra,
 } from './parse/prase-spectra'
+import { isSpectrum2D } from './parse/data/data2d/isSpectrum2D'
 
 // Default tolerances confirmed by vcnainala on issue #66
 const DEFAULT_TOLERANCE_H = 0.02
@@ -46,8 +47,6 @@ export async function generateCorrelationData(input: CorrelationInput) {
     )
   }
 
-  const spectraBeforeProcessing = state.data ? [...state.data.spectra] : []
-
   if (state.data) {
     processSpectra(
       state.data,
@@ -56,28 +55,18 @@ export async function generateCorrelationData(input: CorrelationInput) {
     )
   }
 
-  // Two independent checks, not redundant with each other:
-  // 1. Reference check: processSpectra replaces a spectrum's array slot with
-  //    a new object only when initiateDatum1D/initiateDatum2D succeeds; on
-  //    failure it leaves the original raw object in place (see its catch
-  //    block) instead of removing it. info.isFt is set at file-load time,
-  //    before this step even runs, so a spectrum whose source data is
-  //    already tagged FT can still fail here and keep isFt: true on its
-  //    broken, incompletely-initialized object, the isFt check alone
-  //    wouldn't catch that case.
-  // 2. isFt check: correlation requires FT (frequency-domain) spectra
-  //    specifically; a spectrum can successfully initiate but still fail
-  //    the separate FT-processing step (that failure is only logged, not
-  //    removed from the array), leaving it as valid-but-still-FID data.
-  // Both together ensure buildCorrelationData only ever sees a spectrum
-  // that both initiated successfully and is genuinely FT-processed.
+  // buildCorrelationData needs detected ranges (1D) or zones (2D) to find
+  // correlations, so require isFt plus at least one detected range/zone.
+  // This also excludes spectra that failed to initiate or failed detection,
+  // since those never get ranges/zones populated either.
   // Note: a pre-existing bug (see https://github.com/NFDI4Chem/nmrkit/issues/139)
-  // currently makes every spectrum fail this step, so real cross-spectrum correlation links are untested here.
-  const spectra = (state.data?.spectra ?? []).filter(
-    (spectrum, index) =>
-      spectrum !== spectraBeforeProcessing[index] &&
-      spectrum?.info?.isFt === true
-  )
+  // currently makes every spectrum fail initiation, so real cross-spectrum correlation links are untested here.
+  const spectra = (state.data?.spectra ?? []).filter(spectrum => {
+    if (spectrum?.info?.isFt !== true) return false
+    return isSpectrum2D(spectrum)
+      ? (spectrum.zones?.values?.length ?? 0) > 0
+      : (spectrum.ranges?.values?.length ?? 0) > 0
+  })
 
   const options: CorrelationOptions = {
     mf,
