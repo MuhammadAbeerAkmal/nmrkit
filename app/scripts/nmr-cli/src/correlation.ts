@@ -29,19 +29,22 @@ export async function generateCorrelationData(input: CorrelationInput) {
   const { url, dir, mf, toleranceH, toleranceC } = input
   const logger = new FifoLogger()
 
-  const { state } = url
-    ? await core.readFromWebSource(buildWebSource(url), {
-        ...parsingOptions,
-        logger,
-      })
-    : dir
-      ? await core.read(await loadFileCollection(dir), {
-          ...parsingOptions,
-          logger,
-        })
-      : (() => {
-          throw new Error('Either a spectra URL or a local directory path is required')
-        })()
+  let state
+  if (url) {
+    ;({ state } = await core.readFromWebSource(buildWebSource(url), {
+      ...parsingOptions,
+      logger,
+    }))
+  } else if (dir) {
+    ;({ state } = await core.read(await loadFileCollection(dir), {
+      ...parsingOptions,
+      logger,
+    }))
+  } else {
+    throw new Error(
+      'Either a spectra URL or a local directory path is required'
+    )
+  }
 
   const spectraBeforeProcessing = state.data ? [...state.data.spectra] : []
 
@@ -53,20 +56,27 @@ export async function generateCorrelationData(input: CorrelationInput) {
     )
   }
 
-  // processSpectra replaces a spectrum's array slot with a new object only
-  // when it successfully parses it; on failure it leaves the original raw
-  // object in place (see its catch block) instead of removing it. Compare
-  // by reference against the pre-processing snapshot to filter those out,
-  // so buildCorrelationData never sees a spectrum it can't actually read.
-  // Correlation also requires FT (frequency-domain) spectra specifically —
-  // a spectrum can successfully parse but still fail the FT-processing step
-  // (that failure is only logged, not removed from the array), so filter on
-  // info.isFt too, not just whether parsing itself succeeded.
+  // Two independent checks, not redundant with each other:
+  // 1. Reference check: processSpectra replaces a spectrum's array slot with
+  //    a new object only when initiateDatum1D/initiateDatum2D succeeds; on
+  //    failure it leaves the original raw object in place (see its catch
+  //    block) instead of removing it. info.isFt is set at file-load time,
+  //    before this step even runs, so a spectrum whose source data is
+  //    already tagged FT can still fail here and keep isFt: true on its
+  //    broken, incompletely-initialized object, the isFt check alone
+  //    wouldn't catch that case.
+  // 2. isFt check: correlation requires FT (frequency-domain) spectra
+  //    specifically; a spectrum can successfully initiate but still fail
+  //    the separate FT-processing step (that failure is only logged, not
+  //    removed from the array), leaving it as valid-but-still-FID data.
+  // Both together ensure buildCorrelationData only ever sees a spectrum
+  // that both initiated successfully and is genuinely FT-processed.
   // Note: a pre-existing bug (see https://github.com/NFDI4Chem/nmrkit/issues/139)
   // currently makes every spectrum fail this step, so real cross-spectrum correlation links are untested here.
   const spectra = (state.data?.spectra ?? []).filter(
     (spectrum, index) =>
-      spectrum !== spectraBeforeProcessing[index] && spectrum?.info?.isFt === true
+      spectrum !== spectraBeforeProcessing[index] &&
+      spectrum?.info?.isFt === true
   )
 
   const options: CorrelationOptions = {
